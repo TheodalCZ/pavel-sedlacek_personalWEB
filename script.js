@@ -1,9 +1,25 @@
-const heroContours = document.querySelectorAll('.hero-contour');
+const heroContours = document.querySelectorAll('.hero-contour:not(.footer-contour)');
 heroContours.forEach((heroContour) => {
   requestAnimationFrame(() => {
     heroContour.classList.add('active');
   });
 });
+
+// Vrstevnice v patičce se začnou kreslit, až když se patička objeví na obrazovce.
+const footerContour = document.querySelector('.footer-contour');
+if (footerContour) {
+  if ('IntersectionObserver' in window) {
+    const footerObserver = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        footerContour.classList.add('active');
+        footerObserver.disconnect();
+      }
+    }, { threshold: 0.2 });
+    footerObserver.observe(footerContour.closest('.site-footer'));
+  } else {
+    footerContour.classList.add('active');
+  }
+}
 
 const navToggle = document.querySelector('.nav-toggle');
 const mainNav = document.querySelector('.main-nav');
@@ -23,33 +39,37 @@ if (navToggle && mainNav) {
   });
 }
 
-const sections = document.querySelectorAll('main section[id]');
-const navAnchors = document.querySelectorAll('.main-nav a[href^="#"]');
+const navAnchors = Array.from(document.querySelectorAll('.main-nav ul a[href^="#"]'));
+const navTargets = navAnchors
+  .map((anchor) => ({ anchor, target: document.querySelector(anchor.getAttribute('href') === '#top' ? '.hero' : anchor.getAttribute('href')) }))
+  .filter((item) => item.target);
 
+// Zvýrazní položku menu podle sekce, která je právě pod hlavičkou.
 const activateCurrentSection = () => {
-  const scrollPosition = window.scrollY + 120;
+  const header = document.querySelector('.site-header');
+  const offset = (header ? header.offsetHeight : 0) + 80;
+  let current = null;
 
-  sections.forEach((section) => {
-    const top = section.offsetTop;
-    const height = section.offsetHeight;
-    const id = section.getAttribute('id');
+  navTargets.forEach((item) => {
+    if (item.target.getBoundingClientRect().top <= offset) {
+      current = item;
+    }
+  });
 
-    if (scrollPosition >= top && scrollPosition < top + height) {
-      navAnchors.forEach((anchor) => {
-        const href = anchor.getAttribute('href');
-        if (href === `#${id}`) {
-          anchor.classList.add('is-active');
-        } else {
-          anchor.classList.remove('is-active');
-        }
-      });
+  navTargets.forEach((item) => {
+    item.anchor.classList.toggle('is-active', item === current);
+    if (item === current) {
+      item.anchor.setAttribute('aria-current', 'true');
+    } else {
+      item.anchor.removeAttribute('aria-current');
     }
   });
 };
 
-if (navAnchors.length > 0) {
+if (navTargets.length > 0) {
   activateCurrentSection();
   window.addEventListener('scroll', activateCurrentSection, { passive: true });
+  window.addEventListener('resize', activateCurrentSection);
 }
 
 const headerLinks = document.querySelectorAll('.main-nav a');
@@ -167,3 +187,101 @@ const fixCzechOrphans = (root) => {
 };
 
 fixCzechOrphans(document.body);
+
+// Jméno v hero sekci se při scrollu plynule rozjíždí do stran (Pavel doleva, Sedláček doprava).
+const heroShiftItems = document.querySelectorAll('[data-hero-shift]');
+const heroSection = document.querySelector('.hero');
+
+if (heroShiftItems.length > 0 && heroSection && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  let current = 0;
+  let target = 0;
+  let frame = null;
+
+  const render = () => {
+    current += (target - current) * 0.12;
+    if (Math.abs(target - current) < 0.001) {
+      current = target;
+    }
+
+    heroShiftItems.forEach((item) => {
+      const direction = Number(item.dataset.heroShift);
+      item.style.translate = `${direction * current * window.innerWidth * 0.35}px 0`;
+    });
+
+    frame = current === target ? null : requestAnimationFrame(render);
+  };
+
+  const onScroll = () => {
+    const progress = Math.min(Math.max(window.scrollY / heroSection.offsetHeight, 0), 1);
+    target = progress;
+    if (frame === null) {
+      frame = requestAnimationFrame(render);
+    }
+  };
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
+  onScroll();
+}
+
+// Animace při scrollu: indikátor postupu a postupné odhalování sekcí.
+const scrollProgress = document.createElement('div');
+scrollProgress.className = 'scroll-progress';
+scrollProgress.setAttribute('aria-hidden', 'true');
+document.body.appendChild(scrollProgress);
+
+const updateScrollProgress = () => {
+  const max = document.documentElement.scrollHeight - window.innerHeight;
+  const ratio = max > 0 ? Math.min(window.scrollY / max, 1) : 0;
+  scrollProgress.style.transform = `scaleX(${ratio})`;
+};
+updateScrollProgress();
+window.addEventListener('scroll', updateScrollProgress, { passive: true });
+window.addEventListener('resize', updateScrollProgress);
+
+const revealAllowed = 'IntersectionObserver' in window
+  && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+if (revealAllowed && document.querySelector('.hero-grid')) {
+  const addReveal = (selector, variant, stagger = true) => {
+    const counters = new Map();
+    document.querySelectorAll(selector).forEach((el) => {
+      const index = counters.get(el.parentElement) || 0;
+      counters.set(el.parentElement, index + 1);
+      el.classList.add('reveal');
+      el.dataset.reveal = typeof variant === 'function' ? variant(index) : variant;
+      if (stagger) {
+        el.style.setProperty('--reveal-delay', `${Math.min(index, 4) * 0.12}s`);
+      }
+    });
+  };
+
+  const sideByIndex = (index) => ['left', 'up', 'right'][index % 3];
+
+  addReveal('.section-heading', 'up', false);
+  addReveal('.project-card', 'up');
+  addReveal('.timeline-column > h3', 'up', false);
+  addReveal('.timeline-column:nth-child(odd) .timeline-item', 'left');
+  addReveal('.timeline-column:nth-child(even) .timeline-item', 'right');
+  addReveal('.skill-block', 'zoom');
+  addReveal('.interest-card', sideByIndex);
+  addReveal('.footer-grid > div', 'left', false);
+  addReveal('.contact-list', 'right', false);
+
+  document.querySelectorAll('.skill-tags').forEach((tags) => {
+    Array.from(tags.children).forEach((tag, i) => tag.style.setProperty('--i', i));
+  });
+
+  document.documentElement.classList.add('js-reveal');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+
+  document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
+}
