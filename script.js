@@ -138,3 +138,32 @@ document.querySelectorAll('[data-carousel]').forEach((carousel) => {
 
   resetTimer();
 });
+
+// Česká typografie: za jednopísmenné předložky a spojky vloží pevnou mezeru,
+// aby nezůstaly na konci řádku.
+const fixCzechOrphans = (root) => {
+  const pattern = /(^|[\s(„"])([KkSsVvZzOoUuAaIi])[ \t\r\n]+/g;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => (
+      node.parentElement && !node.parentElement.closest('script, style, textarea, pre, code')
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_REJECT
+    ),
+  });
+
+  const nodes = [];
+  while (walker.nextNode()) {
+    nodes.push(walker.currentNode);
+  }
+
+  nodes.forEach((node) => {
+    const text = node.nodeValue;
+    // Dvě průchody kvůli sousedním spojkám typu "a v".
+    const fixed = text.replace(pattern, '$1$2\u00A0').replace(pattern, '$1$2\u00A0');
+    if (fixed !== text) {
+      node.nodeValue = fixed;
+    }
+  });
+};
+
+fixCzechOrphans(document.body);
